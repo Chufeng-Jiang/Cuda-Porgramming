@@ -1,3 +1,21 @@
+- [外部循环，内部调用kernel](#外部循环内部调用kernel)
+  - [编译运行](#编译运行)
+  - [查看 kernel 统计：](#查看-kernel-统计)
+  - [查看 CUDA API 调用：](#查看-cuda-api-调用)
+  - [查看完整汇总：](#查看完整汇总)
+- [grid-stride loop 先调用kernel, 然后进行内部循环](#grid-stride-loop-先调用kernel-然后进行内部循环)
+  - [编译运行](#编译运行-1)
+  - [查看 kernel 统计：](#查看-kernel-统计-1)
+  - [查看 CUDA API 调用：](#查看-cuda-api-调用-1)
+  - [查看完整汇总：](#查看完整汇总-1)
+- [CUDA-GDB](#cuda-gdb)
+  - [CUDA-GDB 支持 WSL2，但需要在 Windows 中把 EnableInterface 设置为 DWORD 1](#cuda-gdb-支持-wsl2但需要在-windows-中把-enableinterface-设置为-dword-1)
+  - [编译运行](#编译运行-2)
+  - [查询函数](#查询函数)
+  - [打断点](#打断点)
+  - [运行](#运行)
+
+
 # 外部循环，内部调用kernel
 
 ```
@@ -379,4 +397,116 @@ Processing [vector_add.sqlite] with [/opt/nvidia/nsight-systems-cli/2026.3.1/tar
     134.218      2    67.109    67.109    67.109    67.109        0.000  [CUDA memcpy Host-to-Device]
 
 
+```
+
+
+# CUDA-GDB
+
+## CUDA-GDB 支持 WSL2，但需要在 Windows 中把 EnableInterface 设置为 DWORD 1
+
+powershell administration:
+
+```
+reg add "HKLM\SOFTWARE\NVIDIA Corporation\GPUDebugger" `
+  /v EnableInterface `
+  /t REG_DWORD `
+  /d 1 `
+  /f
+```
+
+重启电脑
+
+## 编译运行
+
+```
+nvcc -g -G -O0 -std=c++17 vector_add.cu -o vector_add_debug
+
+cuda-gdb ./vector_add_debug
+
+```
+
+WSL系统有点小兼容的问题
+```
+(base) chufeng@Chufeng:~/Desktop/InfiniTensor/coursedemo/cuda/01_vectorAdd_Profiling_GDB$ nvcc \
+  -g \
+  -G \
+  -O0 \
+  -std=c++17 \
+  -arch=sm_86 \
+  vector_add.cu \
+  -o vector_add_debug
+```
+
+## 查询函数
+
+```
+(cuda-gdb) info functions add_kernel_inner_loop
+```
+
+```
+(cuda-gdb) info functions add_kernel_inner_loop
+All functions matching regular expression "add_kernel_inner_loop":
+
+File /home/chufeng/Desktop/InfiniTensor/coursedemo/cuda/01_vectorAdd_Profiling_GDB/vector_add.cu:
+72:     void add_kernel_inner_loop<float>(float*, float const*, float const*, unsigned long, unsigned long);
+
+File /tmp/tmpxft_000040c1_00000000-6_vector_add.cudafe1.stub.c:
+14:     static void __device_stub__Z21add_kernel_inner_loopIfEvPT_PKS0_S3_mm(float*, float const*, float const*, _ZSt6size_t, _ZSt6size_t);
+15:     static void __wrapper__device_stub_add_kernel_inner_loop<float>(float*&, float const*&, float const*&, _ZSt6size_t&, _ZSt6size_t&);
+(cuda-gdb) 
+```
+
+## 打断点
+
+```
+break vector_add.cu:72
+```
+
+## 运行
+
+```
+run
+
+``` 
+
+```
+(cuda-gdb) run
+Starting program: /home/chufeng/Desktop/InfiniTensor/coursedemo/cuda/01_vectorAdd_Profiling_GDB/vector_add_debug 
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[New Thread 0x7fffe9f8d000 (LWP 6543)]
+[New Thread 0x7fffe8b87000 (LWP 6544)]
+[Detaching after fork from child process 6545]
+[New Thread 0x7fffe3fff000 (LWP 6554)]
+[Thread 0x7fffe3fff000 (LWP 6554) exited]
+[New Thread 0x7fffe3fff000 (LWP 6555)]
+[New Thread 0x7fffd56fe000 (LWP 6556)]
+CUDA ELF Image contains unknown ABI version: 8
+This might happen while debugging JITed codeusing latest driver with older tools.
+Further debugging might not be reliable.Are you sure you want to continue? (y or [n]) y
+[Switching focus to CUDA kernel 0, grid 1, block (0,0,0), thread (0,0,0), device 0, sm 0, warp 0, lane 0]
+
+Thread 1 "vector_add_debu" hit Breakpoint 1, add_kernel_inner_loop<float><<<(1,1,1),(1,1,1)>>> (c=0x913c00000, a=0x90bc00000, b=0x90fc00000, n=16777216, step=1)
+    at vector_add.cu:79
+79          std::size_t idx =
+```
+
+```
+(cuda-gdb) next
+83          for (std::size_t i = idx; i < n; i += step) {
+(cuda-gdb) print idx
+$1 = 0
+(cuda-gdb) next
+84              c[i] = a[i] + b[i];
+(cuda-gdb) print i
+$2 = 0
+(cuda-gdb) print a[i]
+$3 = 1
+(cuda-gdb) print c[i]
+$4 = 0
+(cuda-gdb) next
+83          for (std::size_t i = idx; i < n; i += step) {
+(cuda-gdb) print c[i]
+$5 = 2
+(cuda-gdb) 
 ```
